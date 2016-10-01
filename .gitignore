@@ -1,6 +1,4 @@
 /.stack-work/
 /TAGS
-elm-stuff
-.idea
-index.html
-
+/test/elm-package.json
+/test/elm-stuff

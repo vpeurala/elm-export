@@ -1,7 +1,7 @@
-module Main exposing (..)
+module PositionType exposing (..)
 
 
 type Position
-  = Beginning
-  | Middle
-  | End
+    = Beginning
+    | Middle
+    | End

@@ -1,68 +1,83 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators     #-}
 
-module Elm.Decoder (toElmDecoderSource, toElmDecoderSourceWith)
-       where
+module Elm.Decoder
+  ( toElmDecoderSource
+  , toElmDecoderSourceWith
+  ) where
 
 import           Control.Monad.Reader
+import           Data.Text
 import           Elm.Common
 import           Elm.Type
-import           Text.Printf
+import           Formatting
 
-render :: ElmTypeExpr -> Reader Options String
+cr :: Format r r
+cr = now "\n"
+
+render :: ElmTypeExpr -> Reader Options Text
 
 render (TopLevel (DataType d t)) =
-  printf "%s : Json.Decode.Decoder %s\n%s =\n%s" fnName d fnName <$> render t
-  where fnName = "decode" ++ d
+    sformat
+        (stext % " : Decoder " % stext % cr % stext % " =" % cr % stext)
+        fnName
+        d
+        fnName <$>
+    render t
+  where
+    fnName = sformat ("decode" % stext) d
 
-render (DataType d _) = return $ "decode" ++ d
+render (DataType d _) = pure $ sformat ("decode" % stext) d
 
-render (Record n t) = printf "  Json.Decode.succeed %s\n%s" n <$> render t
+render (Record n t) =
+    sformat ("    decode " % stext % cr % stext) n <$> render t
 
-render (Product (Primitive "List") (Primitive "Char")) = render (Primitive "String")
+render (Product (Primitive "List") (Primitive "Char")) =
+    render (Primitive "String")
 
-render (Product (Primitive "List") t) = printf "Json.Decode.list %s" <$> render t
+render (Product (Primitive "List") t) =
+    sformat ("(list " % stext % ")") <$> render t
 
-render (Product (Primitive "Maybe") t) = printf "Json.Decode.maybe %s" <$> render t
+render (Product (Primitive "Maybe") t) =
+    sformat ("(maybe " % stext % ")") <$> render t
 
 render (Product x y) =
-  do bodyX <- render x
-     bodyY <- render y
-     return $ printf "%s\n%s" bodyX bodyY
+    sformat (stext % cr % stext) <$> render x <*> render y
 
-render (Selector n t) =
-  do fieldModifier <- asks fieldLabelModifier
-     printf "    |: (\"%s\" := %s)" (fieldModifier n) <$> render t
+render (Selector n t) = do
+    fieldModifier <- asks fieldLabelModifier
+    sformat
+        ("        |> required \"" % stext % "\" " % stext)
+        (fieldModifier n) <$>
+        render t
 
 render (Tuple2 x y) =
-    do bodyX <- render x
-       bodyY <- render y
-       return $ printf "Json.Decode.tuple2 (,) %s %s" bodyX bodyY
+    sformat ("(tuple2 (,) " % stext % " " % stext % ")") <$> render x <*>
+    render y
 
 render (Dict x y) =
-  printf "Json.Decode.map Dict.fromList (Json.Decode.list (%s))" <$> render (Tuple2 x y)
+    sformat ("(map Dict.fromList (list " % stext % "))") <$>
+    render (Tuple2 x y)
 
-render (Primitive "String") = return "Json.Decode.string"
-
-render (Primitive "Int") = return "Json.Decode.int"
-
-render (Primitive "Double") = return "Json.Decode.float"
-
-render (Primitive "Float") = return "Json.Decode.float"
-
-render (Primitive "Date") = return "Json.Decode.Extra.date"
-
-render (Primitive "Bool") = return "Json.Decode.bool"
-
+render (Primitive "String") = pure "string"
+render (Primitive "Int") = pure "int"
+render (Primitive "Double") = pure "float"
+render (Primitive "Float") = pure "float"
+render (Primitive "Date") = pure "(customDecoder string Date.fromString)"
+render (Primitive "Bool") = pure "bool"
 render (Field t) = render t
+render x = pure $ sformat ("<" % shown % ">") x
 
-render x = return $ printf "<%s>" (show x)
 
-toElmDecoderSourceWith :: ElmType a => Options -> a -> String
-toElmDecoderSourceWith options x =
-  runReader (render . TopLevel $ toElmType x) options
+toElmDecoderSourceWith
+    :: ElmType a
+    => Options -> a -> Text
+toElmDecoderSourceWith options x = runReader (render . TopLevel $ toElmType x) options
 
-toElmDecoderSource :: ElmType a => a -> String
+toElmDecoderSource
+    :: ElmType a
+    => a -> Text
 toElmDecoderSource = toElmDecoderSourceWith defaultOptions
